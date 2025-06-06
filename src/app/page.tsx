@@ -4,9 +4,11 @@ import { ToggleTheme } from "@/components/ToggleTheme";
 
 export default function () {
   return (
-  <div className="bg-[#F9FAFB] dark:bg-slate-900 flex flex-col space-y-3">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
-      <InputContent />
+      <main className="py-8">
+        <InputContent />
+      </main>
     </div>
   )
 }
