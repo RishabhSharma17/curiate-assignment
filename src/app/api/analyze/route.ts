@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 
 export type ReadabilityResponse = {
-  [x: string]: any;
   success: boolean;
   message?: string;
   data?: any;
@@ -36,42 +35,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             );
         }
 
-        const [cohereResponse, languagetoolResponse] = await Promise.all([
-            axios.post(
-            'https://api.cohere.ai/v1/embed',
-            {
-                texts: [content],
-                model: 'embed-multilingual-v3.0',
-                input_type: 'search_document'
+        const  languagetoolResponse = await axios.post(
+        'https://api.languagetool.org/v2/check',
+        new URLSearchParams({
+            text: content,
+            language: lang,
+        }),
+        {
+            headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
             },
-            {
-                headers: {
-                Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
-                'Content-Type': 'application/json',
-                },
-                timeout:10000
-            },
-            ),
-            axios.post(
-            'https://api.languagetool.org/v2/check',
-            new URLSearchParams({
-                text: content,
-                language: lang,
-            }),
-            {
-                headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                },
-            }
-            )
-        ]);
+        }
+        );
 
         return NextResponse.json(
             {
             success: true,
             message: 'Content analyzed successfully',
-            embedding: cohereResponse.data.embeddings[0],
-            corrections: languagetoolResponse.data.matches,
+            corrections: languagetoolResponse.data
             },
             { status: 200 }
         );
