@@ -11,7 +11,7 @@ import {
 import { Textarea } from "./ui/textarea";
 import { useState } from "react";
 import { Button } from "./ui/button";
-import { Book, Hash, Loader2, Type } from "lucide-react";
+import { Book, CheckCircle, Globe, Hash, Loader2, Type } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   DropdownMenu,
@@ -22,13 +22,6 @@ import {
 import axios, { AxiosError } from "axios";
 import { toast } from "sonner";
 import { FiCheck, FiPlus } from "react-icons/fi";
-
-type ReadabilityResponse = {
-  success: boolean;
-  message?: string;
-  corrections?: Corrections;
-  error?: string;
-};
 
 const LANGUAGES = [
   { label: "English", value: "en", flag: "🇬🇧" },
@@ -56,13 +49,58 @@ export type Match = {
 type LanguageData = {
   name: string;
   code: string;
+  detectedLanguage?: {
+    name: string;
+    code: string;
+    confidence: number;
+    source: string;
+  };
 };
 
 type Corrections = {
   matches: Match[];
   language: LanguageData;
+  sentenceRanges?: number[][];
 };
 
+type ReadabilityResponse = {
+  success: boolean;
+  message?: string;
+  corrections?: Corrections;
+  error?: string;
+};
+
+const countSyllables = (word: string): number => {
+  word = word.toLowerCase();
+  word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '');
+  word = word.replace(/^y/, '');
+  const syllableCount = word.match(/[aeiouy]{1,2}/g);
+  return syllableCount ? syllableCount.length : 1;
+};
+
+const calculateReadabilityScore = (text: string): number => {
+  if (!text.trim()) return 0;
+  
+  const sentences = text.split(/[.!?]+/).filter(Boolean);
+  const words = text.trim().split(/\s+/);
+  const totalSyllables = words.reduce((sum, word) => sum + countSyllables(word), 0);
+  
+  const wordsPerSentence = words.length / sentences.length;
+  const syllablesPerWord = totalSyllables / words.length;
+  const score = 206.835 - (1.015 * wordsPerSentence) - (84.6 * syllablesPerWord);
+  
+  return Number(score.toFixed(1));
+};
+
+const getReadabilityLevel = (score: number): { level: string; color: string } => {
+  if (score >= 90) return { level: 'Very Easy', color: 'text-green-500' };
+  if (score >= 80) return { level: 'Easy', color: 'text-emerald-500' };
+  if (score >= 70) return { level: 'Fairly Easy', color: 'text-blue-500' };
+  if (score >= 60) return { level: 'Standard', color: 'text-yellow-500' };
+  if (score >= 50) return { level: 'Fairly Difficult', color: 'text-orange-500' };
+  if (score >= 30) return { level: 'Difficult', color: 'text-red-500' };
+  return { level: 'Very Difficult', color: 'text-red-600' };
+};
 
 const InputContent: React.FC = () => {
   const [content, setContent] = useState('');
@@ -92,12 +130,10 @@ const InputContent: React.FC = () => {
     try {
       const response = await axios.post<ReadabilityResponse>("/api/analyze", data);
       if (response.data.success) {
-
         toast.success("Analysis complete", {
           description: response.data.message,
           duration: 4000,
         });
-
         setResults(response.data);
       } else {
         setResults({
@@ -124,76 +160,28 @@ const InputContent: React.FC = () => {
     }
   };
 
-
   const handleFix = async (match: Match, replacement: string) => {
     if (!results?.corrections) return;
     setLoading(true);
     try {
-      
-      const response = await axios.post('/api/insert-keyword', { match, replacement ,content});
-
-      toast.success("Insert Successfully",{
+      const response = await axios.post('/api/insert-keyword', { match, replacement, content });
+      toast.success("Insert Successfully", {
         description: response.data.message,
         duration: 2000,
       });
-
       setContent(response.data.newContent);
       setValue('content', response.data.newContent);
-  
       const matchKey = `${match.offset}-${match.length}-${match.message.substring(0, 20)}`;
       setFixedMatches(prev => ({ ...prev, [matchKey]: true }));
     } catch (error) {
-      console.log(error);
-
       toast.error("Error", {
         description: "Failed to Insert the keyword",
         duration: 2000,
       });
-      
-    }finally{
+    } finally {
       setLoading(false);
     }
-
   };
-
-  const MatchesSep = (matches: Match[]) => {
-    const corrections: Match[] = [];
-    const suggestions: Match[] = [];
-
-    matches.forEach(match => {
-      const matchKey = `${match.offset}-${match.length}-${match.message.substring(0, 20)}`;
-      
-      if (match.replacements.length === 1 && !fixedMatches[matchKey]) {
-        corrections.push(match);
-      } else {
-        suggestions.push(match);
-      }
-    });
-
-    return { corrections, suggestions };
-  };
-
-  const joinMatches = (matches: Match[]) => {
-    const sentenceMap: Record<string, Match[]> = {};
-    
-    matches.forEach(match => {
-      const sentence = match.context.text;
-      if (!sentenceMap[sentence]) {
-        sentenceMap[sentence] = [];
-      }
-      sentenceMap[sentence].push(match);
-    });
-    
-    return sentenceMap;
-  };
-
-  const { corrections, suggestions } = results?.corrections?.matches 
-    ? MatchesSep(results.corrections.matches) 
-    : { corrections: [], suggestions: [] };
-    
-  const correctionGroups = joinMatches(corrections);
-  const suggestionGroups = joinMatches(suggestions);
-
 
   return (
     <div className="max-w-4xl mx-auto px-4">
@@ -211,10 +199,7 @@ const InputContent: React.FC = () => {
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    className="min-w-[140px] capitalize border-2"
-                  >
+                  <Button variant="outline" className="min-w-[140px] capitalize border-2">
                     {selectedLang ? (
                       <span className="flex items-center gap-2">
                         {LANGUAGES.find((l) => l.value === selectedLang)?.flag}
@@ -282,130 +267,115 @@ const InputContent: React.FC = () => {
       </FormProvider>
 
       {results && (
-        <div className="mt-6">
+        <div className="mt-8">
           {!results.success ? (
-            <div className="text-red-500 p-4 bg-red-50 rounded">
+            <div className="text-red-500 p-4 bg-red-50 rounded-lg">
               Error: {results.error || 'Unknown error'}
             </div>
           ) : (
-              <div className="">
-                <div className="grid grid-cols-3 gap-4 mb-6 p-4  rounded">
-                  <div className="text-center">
-                    <h3 className="font-semibold">Word Count</h3>
-                    <p className="text-2xl">{calculateWordCount(content)}</p>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border p-6">
+              <h2 className="text-2xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-6">
+                Analysis Results
+              </h2>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300 mb-1">
+                    <Type className="h-4 w-4" />
+                    <span className="text-sm font-medium">Word Count</span>
                   </div>
-                  <div className="text-center">
-                    <h3 className="font-semibold">Language</h3>
-                    <p className="text-xl">
-                      {results.corrections?.language?.name || 'Unknown'}
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <h3 className="font-semibold">Issues Found</h3>
-                    <p className="text-2xl">
-                      {results.corrections?.matches?.length || 0}
-                    </p>
-                  </div>
+                  <p className="text-2xl font-bold">{calculateWordCount(content)}</p>
                 </div>
 
-                <div className="border rounded-xl p-4 grid space-x-1 grid-cols-2">
-                  {(corrections.length > 0 || suggestions.length > 0) ? (
-                    <div className="  overflow-hidden">
-                      {corrections.length > 0 && (
-                        <>
-                          <h2 className=" p-3 font-bold text-blue-800">Corrections</h2>
-                          
-                          {Object.entries(correctionGroups).map(
-                            ([sentence, matches], idx) => (
-                              <div key={`corr-${idx}`} className="p-4 border-b">
-                                <p className="mb-3 text-gray-700">{sentence}</p>
-                                
-                                <div className="space-y-3">
-                                  {matches.map((match, matchIdx) => {
-                                    const matchKey = `${match.offset}-${match.length}-${match.message.substring(0, 20)}`;
-                                    const isFixed = fixedMatches[matchKey];
-                                    
-                                    return (
-                                      <div key={`corr-match-${matchIdx}`} className="flex items-start justify-between">
-                                        <div className="flex-1">
-                                          <p className="font-medium text-red-600">
-                                            {match.message}
-                                          </p>
-                                          {match.replacements.length > 0 && (
-                                            <p className="text-sm text-gray-600 mt-1">
-                                              <span className="font-semibold">Suggestion:</span>{' '}
-                                              {match.replacements[0].value}
-                                            </p>
-                                          )}
-                                        </div>
-                                        
-                                        <div className="ml-4">
-                                          {isFixed ? (
-                                            <span className="text-green-600 flex items-center bg-green-100 px-2 py-1 rounded">
-                                              <FiCheck className="mr-1" /> Applied
-                                            </span>
-                                          ) : (
-                                            <button
-                                              onClick={() => handleFix(match, match.replacements[0].value)}
-                                              className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 flex items-center"
-                                            >
-                                              <FiPlus className="mr-1" /> Insert
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )
-                          )}
-                        </>
-                      )}
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300 mb-1">
+                    <Hash className="h-4 w-4" />
+                    <span className="text-sm font-medium">Characters</span>
+                  </div>
+                  <p className="text-2xl font-bold">{content.length}</p>
+                </div>
 
-                      {suggestions.length > 0 && (
-                        <>
-                          <h2 className="bg-yellow-100 p-3 font-bold text-yellow-800">Suggestions</h2>
-                          
-                          {Object.entries(suggestionGroups).map(
-                            ([sentence, matches], idx) => (
-                              <div key={`sugg-${idx}`} className="p-4 border-b">
-                                <p className="mb-3 text-gray-700">{sentence}</p>
-                                
-                                <div className="space-y-3">
-                                  {matches.map((match, matchIdx) => (
-                                    <div key={`sugg-match-${matchIdx}`} className="flex items-start">
-                                      <div className="flex-1">
-                                        <p className="font-medium text-yellow-600">
-                                          {match.message}
-                                        </p>
-                                        {match.replacements.length > 0 && (
-                                          <p className="text-sm text-gray-600 mt-1">
-                                            <span className="font-semibold">Possible improvements:</span>{' '}
-                                            {match.replacements.map(r => r.value).join(', ')}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )
-                          )}
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center p-8 bg-green-50 text-green-700 rounded-lg">
-                      No issues found! Your text looks great.
-                    </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300 mb-1">
+                    <Globe className="h-4 w-4" />
+                    <span className="text-sm font-medium">Language</span>
+                  </div>
+                  <p className="text-2xl font-bold">
+                    {results.corrections?.language?.detectedLanguage?.name || 'Unknown'}
+                  </p>
+                </div>
+
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300 mb-1">
+                    <Book className="h-4 w-4" />
+                    <span className="text-sm font-medium">Readability</span>
+                  </div>
+                  {content && (
+                    <>
+                      <p className="text-2xl font-bold">{calculateReadabilityScore(content)}</p>
+                      <p className={`text-sm mt-1 ${getReadabilityLevel(calculateReadabilityScore(content)).color}`}>
+                        {getReadabilityLevel(calculateReadabilityScore(content)).level}
+                      </p>
+                    </>
                   )}
+                </div>
+              </div>
 
-                  <div className="border-l  p-5">
-                    {content}
+              {/* Sentence Analysis */}
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold mb-4">Content Structure</h3>
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                  <div className="space-y-2">
+                    {results.corrections?.sentenceRanges?.map((range, index) => (
+                      <div key={index} className="text-sm text-gray-600 dark:text-gray-300 p-2 border-b last:border-0">
+                        <span className="font-medium text-gray-700 dark:text-gray-200">
+                          Sentence {index + 1}:
+                        </span>{' '}
+                        {content.slice(range[0], range[1])}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
+
+              {/* Issues Section */}
+              {results.corrections?.matches && results.corrections.matches.length > 0 ? (
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold mb-4">Grammar & Style Suggestions</h3>
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
+                    {results.corrections.matches.map((match, index) => (
+                      <div key={index} className="mb-4 last:mb-0 p-3 border-b last:border-0">
+                        <p className="font-medium text-red-600 dark:text-red-400">
+                          {match.message}
+                        </p>
+                        {match.replacements.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {match.replacements.map((r, idx) => (
+                              <Button
+                                key={idx}
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleFix(match, r.value)}
+                                className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/50 dark:text-indigo-300"
+                              >
+                                {r.value}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-100 dark:border-green-900">
+                  <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                    <CheckCircle className="h-5 w-5" />
+                    <p className="font-medium">No issues found! Your text looks great.</p>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
