@@ -8,7 +8,6 @@ const Header: React.FC = () => {
                     <h1 className="text-4xl font-bold text-white">
                         SEO Analyzer
                     </h1>
-                    <span className="px-3 py-1 text-sm bg-white/20 rounded-full text-white">Beta</span>
                 </div>
                 <div className="bg-white/10 p-2 rounded-lg backdrop-blur-sm">
                     <ToggleTheme />

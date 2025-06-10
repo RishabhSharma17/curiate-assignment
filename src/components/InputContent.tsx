@@ -21,7 +21,6 @@ import {
 } from "./ui/dropdown-menu";
 import axios, { AxiosError } from "axios";
 import { toast } from "sonner";
-import { FiCheck, FiPlus } from "react-icons/fi";
 
 const LANGUAGES = [
   { label: "English", value: "en", flag: "🇬🇧" },
@@ -107,7 +106,7 @@ const InputContent: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [results, setResults] = useState<ReadabilityResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [fixedMatches, setFixedMatches] = useState<Record<string, boolean>>({});
+  const [fixedMatches, setFixedMatches] = useState<Record<string, string>>({});
 
   const form = useForm<z.infer<typeof inputSchema>>({
     resolver: zodResolver(inputSchema),
@@ -126,7 +125,7 @@ const InputContent: React.FC = () => {
   
   const onsubmit = async (data: z.infer<typeof inputSchema>) => {
     setIsSubmitting(true);
-    setFixedMatches({});
+    setFixedMatches({}); // Reset fixed matches on new analysis
     try {
       const response = await axios.post<ReadabilityResponse>("/api/analyze", data);
       if (response.data.success) {
@@ -163,6 +162,10 @@ const InputContent: React.FC = () => {
   const handleFix = async (match: Match, replacement: string) => {
     if (!results?.corrections) return;
     setLoading(true);
+    
+    // Create a unique key for this match
+    const matchKey = `${match.offset}-${match.length}-${match.message.substring(0, 20)}`;
+    
     try {
       const response = await axios.post('/api/insert-keyword', { match, replacement, content });
       toast.success("Insert Successfully", {
@@ -171,9 +174,13 @@ const InputContent: React.FC = () => {
       });
       setContent(response.data.newContent);
       setValue('content', response.data.newContent);
-      const matchKey = `${match.offset}-${match.length}-${match.message.substring(0, 20)}`;
-      setFixedMatches(prev => ({ ...prev, [matchKey]: true }));
-    } catch (error) {
+      
+      // Record this fix in fixedMatches
+      setFixedMatches(prev => ({
+        ...prev,
+        [matchKey]: replacement
+      }));
+    } catch {
       toast.error("Error", {
         description: "Failed to Insert the keyword",
         duration: 2000,
@@ -202,7 +209,6 @@ const InputContent: React.FC = () => {
                   <Button variant="outline" className="min-w-[140px] capitalize border-2">
                     {selectedLang ? (
                       <span className="flex items-center gap-2">
-                        {LANGUAGES.find((l) => l.value === selectedLang)?.flag}
                         {LANGUAGES.find((l) => l.value === selectedLang)?.label}
                       </span>
                     ) : (
@@ -218,7 +224,7 @@ const InputContent: React.FC = () => {
                       className="cursor-pointer"
                     >
                       <span className="flex items-center gap-2">
-                        {lang.flag} {lang.label}
+                        {lang.label}
                       </span>
                     </DropdownMenuItem>
                   ))}
@@ -343,28 +349,47 @@ const InputContent: React.FC = () => {
                 <div className="mt-6">
                   <h3 className="text-lg font-semibold mb-4">Grammar & Style Suggestions</h3>
                   <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-100 dark:border-gray-600">
-                    {results.corrections.matches.map((match, index) => (
-                      <div key={index} className="mb-4 last:mb-0 p-3 border-b last:border-0">
-                        <p className="font-medium text-red-600 dark:text-red-400">
-                          {match.message}
-                        </p>
-                        {match.replacements.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {match.replacements.map((r, idx) => (
-                              <Button
-                                key={idx}
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleFix(match, r.value)}
-                                className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/50 dark:text-indigo-300"
-                              >
-                                {r.value}
-                              </Button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    {results.corrections.matches.map((match, index) => {
+                      const matchKey = `${match.offset}-${match.length}-${match.message.substring(0, 20)}`;
+                      const appliedReplacement = fixedMatches[matchKey];
+                      
+                      return (
+                        <div key={index} className="mb-4 last:mb-0 p-3 border-b last:border-0">
+                          <p className="font-medium text-red-600 dark:text-red-400">
+                            {match.message}
+                          </p>
+                          {match.replacements.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {match.replacements.map((r, idx) => {
+                                const isApplied = appliedReplacement === r.value;
+                                
+                                return (
+                                  <Button
+                                    key={idx}
+                                    variant={isApplied ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => !isApplied && handleFix(match, r.value)}
+                                    className={isApplied 
+                                      ? "bg-green-500 text-white hover:bg-green-500" 
+                                      : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/50 dark:text-indigo-300"
+                                    }
+                                    disabled={isApplied || loading}
+                                  >
+                                    {isApplied ? (
+                                      <span className="flex items-center gap-1">
+                                        <CheckCircle className="h-4 w-4" /> Applied
+                                      </span>
+                                    ) : (
+                                      r.value
+                                    )}
+                                  </Button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
