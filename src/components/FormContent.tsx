@@ -101,7 +101,7 @@ const getReadabilityLevel = (score: number): { level: string; color: string } =>
   return { level: 'Very Difficult', color: 'text-red-600' };
 };
 
-const InputContent: React.FC = () => {
+const FormContent: React.FC = () => {
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [results, setResults] = useState<ReadabilityResponse | null>(null);
@@ -127,7 +127,7 @@ const InputContent: React.FC = () => {
     setIsSubmitting(true);
     setFixedMatches({});
     try {
-      const response = await axios.post<ReadabilityResponse>("/api/analyze", data);
+      const response = await axios.post<ReadabilityResponse>("/api/analyses", data);
       if (response.data.success) {
         toast.success("Analysis complete", {
           description: response.data.message,
@@ -406,4 +406,4 @@ const InputContent: React.FC = () => {
   );
 };
 
-export default InputContent;
+export default FormContent;
