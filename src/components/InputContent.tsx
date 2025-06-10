@@ -125,7 +125,7 @@ const InputContent: React.FC = () => {
   
   const onsubmit = async (data: z.infer<typeof inputSchema>) => {
     setIsSubmitting(true);
-    setFixedMatches({}); // Reset fixed matches on new analysis
+    setFixedMatches({});
     try {
       const response = await axios.post<ReadabilityResponse>("/api/analyze", data);
       if (response.data.success) {
@@ -163,7 +163,6 @@ const InputContent: React.FC = () => {
     if (!results?.corrections) return;
     setLoading(true);
     
-    // Create a unique key for this match
     const matchKey = `${match.offset}-${match.length}-${match.message.substring(0, 20)}`;
     
     try {
@@ -175,7 +174,6 @@ const InputContent: React.FC = () => {
       setContent(response.data.newContent);
       setValue('content', response.data.newContent);
       
-      // Record this fix in fixedMatches
       setFixedMatches(prev => ({
         ...prev,
         [matchKey]: replacement
